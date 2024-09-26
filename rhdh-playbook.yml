@@ -1,1 +1,240 @@
 # this is playbook script# this is playbook script
+---
+- name: Create Namespace For Red Hat Developer Hub
+  hosts: localhost
+  vars:
+    release_namespace: "rhdh-operator"
+    cluster_admin: cluster-admin
+    cluster_admin_pass: Password.54321
+    cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
+    retries: 10
+    delay: 30
+  tasks:
+    - name: Create Auth Token for Openshift API
+      kubernetes.core.k8s_auth:
+        username: "{{ cluster_admin }}"
+        password: "{{ cluster_admin_pass }}"
+        host: "{{ cluster_api_url }}"
+        validate_certs: true 
+      register: k8s_auth_results
+      
+    - name: Print the API token for debugging
+      ansible.builtin.debug:
+        msg: "{{ k8s_auth_results.k8s_auth.api_key }}" 
+      
+    - name: Create a namespace with token  
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        name: "{{ release_namespace }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"  
+        api_version: v1
+        kind: Namespace
+        state: present
+      register: namespace_created
+
+#    - name: create k8s red hat pull secret
+#      k8s:
+#        src: rhdh-pull-secret.yaml
+#        state: present
+    
+    - name: Create OperatorGroup for Red Hat Developer Hub
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: rhdh-operator-group
+            namespace: "{{ release_namespace }}"
+          spec:
+      when: namespace_created is succeeded
+      
+    - name: Subscribe to Red Hat Developer Hub Operator using OLM
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: rhdh
+            namespace: "{{ release_namespace }}"
+          spec:
+            channel: fast
+            installPlanApproval: Manual
+            name: rhdh
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace
+            startingCSV: rhdh-operator.v1.1.1
+      when: namespace_created is succeeded
+      
+    - name: Wait for Red Hat Developer Hub Operator to be installed
+      kubernetes.core.k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: rhdh
+        namespace: "{{ release_namespace }}"
+      register: operator_installed
+      retries: 10
+      delay: 30
+      until: operator_installed.api_found == true
+      
+    - name: Retrieve Red Hat Developer Hub Install Plan
+      kubernetes.core.k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: InstallPlan
+        namespace: "{{ release_namespace }}"
+      register: operator_install_plan
+
+    - name: Print Red Hat Developer Hub Install Plan Details for debugging
+      ansible.builtin.debug:
+        msg: "{{ operator_install_plan }}" 
+        
+    - name: Approve Install Plan for Red Hat Developer Hub
+      kubernetes.core.k8s_json_patch:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: InstallPlan
+        namespace: "{{ release_namespace }}"
+        name: "{{ operator_install_plan.resources[0].metadata.name }}"
+        patch:
+          - op: replace
+            path: /spec/approved
+            value: true
+
+    - name: Retrieve Red Hat Developer Hub Install Plan
+      kubernetes.core.k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: InstallPlan
+        namespace: "{{ release_namespace }}"
+      retries: 10
+      delay: 30
+      until: operator_install_plan.resources[0].spec.approved == true
+      register: operator_install_plan
+      
+      
+    - name: Create Config map app-config-rhdh
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: app-config-rhdh
+            namespace: "{{ release_namespace }}"
+          data:
+            "app-config-rhdh.yaml": |
+              app:
+                title: Red Hat Developer Hub
+                baseUrl: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+              auth:
+                # see https://backstage.io/docs/auth/ to learn about auth providers
+                environment: development
+                providers:
+                  github:
+                    development:
+                      clientId: ${GITHUB_APP_CLIENT_ID}
+                      clientSecret: ${GITHUB_APP_CLIENT_SECRET}
+              backend:
+                auth:
+                  keys:
+                    - secret: "${BACKEND_SECRET}"
+                baseUrl: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+                cors:
+                  origin: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+
+    - name: Create Secret secrets-rhdh
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Secret
+          type: Opaque
+          metadata:
+            name: secrets-rhdh
+            namespace: "{{ release_namespace }}"
+          data:
+            BACKEND_SECRET: "{{ lookup('community.general.random_string', length=24, base64=True) }}"
+            GITHUB_APP_CLIENT_ID: "{{ 'Ov23liEVcnaAl3kLEPC8' | b64encode }}"
+            GITHUB_APP_CLIENT_SECRET: "{{ 'fbbeb7b8d829158e03e5616aa7ec22e026515708' | b64encode }}"
+            
+    - name: Create Config map  dynamic-plugins-rhdh for dynamic plugins
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: ConfigMap
+          metadata:
+            name: dynamic-plugins-rhdh
+            namespace: "{{ release_namespace }}"
+          data:
+             "dynamic-plugins.yaml": |
+               includes:
+                 - dynamic-plugins.default.yaml
+               plugins:
+                 - package: './dynamic-plugins/dist/backstage-plugin-catalog-backend-module-github-dynamic'
+                   disabled: true
+               pluginConfig: {}
+
+      
+    - name: Deploy a Red Hat Developer Hub instance
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: rhdh.redhat.com/v1alpha1
+          kind: Backstage
+          metadata:
+            name: rh-developer-hub
+            namespace: "{{ release_namespace }}"
+          spec:
+            application:
+              appConfig:
+                mountPath: /opt/app-root/src
+                configMaps:
+                   - name: app-config-rhdh
+              extraEnvs:
+                secrets:
+                   - name: secrets-rhdh
+              extraFiles:
+                mountPath: /opt/app-root/src
+              replicas: 1
+              route:
+                enabled: true
+              dynamicPluginsConfigMapName: dynamic-plugins-rhdh
+            database:
+              enableLocalDb: true
+            instances: 1
+            externalAccess:
+              enabled: true
+      when: operator_install_plan.resources[0].spec.approved == true
+
+    - name: Wait for Red Hat Developer Hub instance to be ready
+      kubernetes.core.k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: rhdh.redhat.com/v1alpha1
+        kind: Backstage
+        name: rh-developer-hub
+        namespace: "{{ release_namespace }}"
+      register: rh_dev_hub_instance
+      retries: 10
+      delay: 30
+      until: rh_dev_hub_instance.resources[0].status.conditions[0].status == True

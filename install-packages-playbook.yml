@@ -1,0 +1,89 @@
+---
+- name: Install pip3
+  hosts: localhost
+  become: true
+  become_user: root
+  tasks:
+    - name: install pip3
+      apt: 
+        name: python3-pip
+        state: present
+
+- name: Install Pre requisits Packages
+  hosts: localhost
+  tasks:
+    - name: install pre-requisites
+      pip:
+        name:
+        - openshift
+        - pyyaml
+        - kubernetes 
+
+- name: Install Helm
+  hosts: localhost
+  become: yes
+  tasks:
+  - name: Install curl (if not already installed)
+    package:
+      name: curl
+      state: present
+
+  - name: Download Helm installation script
+    get_url:
+      url: https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+      dest: /tmp/get_helm.sh
+      mode: '0755'
+
+  - name: Run Helm installation script
+    command: /tmp/get_helm.sh
+    args:
+      creates: /usr/local/bin/helm
+    register: helm_install_result
+    changed_when: false
+
+  - name: Add /usr/local/bin to PATH
+    lineinfile:
+      path: ~/.bashrc
+      line: 'export PATH=$PATH:/usr/local/bin'
+    when: helm_install_result.rc == 0
+    
+- name: Install Openshift CLI
+  hosts: localhost
+  vars:
+    release_name: "4.15.0-0.okd-2024-03-10-010116"
+    asset_name: "openshift-client-linux-4.15.0-0.okd-2024-03-10-010116"
+  tasks:
+    - name: Remove file Download OC CLI tar
+      ansible.builtin.file:
+        path: /tmp/{{ asset_name }}.tar.gz
+        state: absent
+    - name: Recursively remove Extract OC tar directory
+      ansible.builtin.file:
+        path: /tmp/{{ asset_name }}
+        state: absent
+    - name: Create a directory if it does not exist
+      ansible.builtin.file:
+        path: /tmp/{{ asset_name }}
+        state: directory
+        mode: '0755'
+
+    - name: Download OC CLI tar
+      ansible.builtin.get_url:
+        url: https://github.com/okd-project/okd/releases/download/{{ release_name }}/{{ asset_name }}.tar.gz
+        dest: /tmp/
+        mode: '0440'
+
+    - name: Extract OC tar into /tmp/
+      ansible.builtin.unarchive:
+        src: /tmp/{{ asset_name }}.tar.gz
+        dest: /tmp/{{ asset_name }}
+        
+    - name: Copy kubectl to user bin
+      ansible.builtin.copy:
+        src: /tmp/{{ asset_name }}/kubectl
+        dest: /usr/local/bin/
+        
+    - name: Copy oc to user bin
+      ansible.builtin.copy:
+        src: /tmp/{{ asset_name }}/oc
+        dest: /usr/local/bin/

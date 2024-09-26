@@ -1,0 +1,105 @@
+# this is playbook script# this is playbook script
+---
+- name: Create Namespace For Keycloak
+  hosts: localhost
+  vars:
+    kube_config_file: "/mnt/f/ROSA Demo/ansible-rhdh-demo/ansible-rhdh-demo/kubeconfig"
+    helm_repo_name: "bitnami"
+    helm_repo_url: "https://charts.bitnami.com/bitnami"
+    release_namespace: "identity-management"
+    service_type: "LoadBalancer"
+    cluster_admin: cluster-admin
+    cluster_admin_pass: Password.54321
+    retries: 10
+    delay: 30
+  tasks:
+    - name: Create a k8s namespace
+      kubernetes.core.k8s_auth:
+        username: "{{ cluster_admin }}"
+        password: "{{ cluster_admin_pass }}"
+        host: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
+        validate_certs: true 
+      register: k8s_auth_results
+      
+    - name: Print the API token for debugging
+      ansible.builtin.debug:
+        msg: "{{ k8s_auth_results.k8s_auth.api_key }}" 
+      
+    - name: Create a namespace with token  
+      kubernetes.core.k8s:
+        name: "{{ release_namespace }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"  
+        api_version: v1
+        kind: Namespace
+        state: present
+      register: namespace_created
+    
+    - name: Create OperatorGroup for Keycloak
+      kubernetes.core.k8s:
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: keycloak-operatorgroup
+            namespace: "{{ release_namespace }}"
+          spec:
+            targetNamespaces:
+            - "{{ release_namespace }}"
+      when: namespace_created is succeeded
+      
+    - name: Subscribe to Keycloak Operator using OLM
+      kubernetes.core.k8s:
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: keycloak-operator
+            namespace: "{{ release_namespace }}"
+          spec:
+            channel: alpha
+            name: keycloak-operator
+            source: community-operators
+            sourceNamespace: openshift-marketplace
+      when: namespace_created is succeeded
+      
+    - name: Wait for Keycloak Operator to be installed
+      kubernetes.core.k8s_info:
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: keycloak-operator
+        namespace: "{{ release_namespace }}"
+      register: operator_installed
+      retries: 10
+      delay: 30
+      until: operator_installed.api_found == true
+
+    - name: Deploy a Keycloak instance
+      kubernetes.core.k8s:
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        state: present
+        definition:
+          apiVersion: keycloak.org/v1alpha1
+          kind: Keycloak
+          metadata:
+            name: demo-auth-keycloak
+            namespace: "{{ release_namespace }}"
+          spec:
+            instances: 1
+            externalAccess:
+              enabled: true
+      when: operator_installed.api_found == true
+
+    - name: Wait for Keycloak instance to be ready
+      kubernetes.core.k8s_info:
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: keycloak.org/v1alpha1
+        kind: Keycloak
+        name: demo-auth-keycloak
+        namespace: "{{ release_namespace }}"
+      register: keycloak_instance
+      until: keycloak_instance.resources[0].status.ready == true

@@ -1,0 +1,69 @@
+---
+- name: Install NGINX Ingress Controller in Minikube
+  hosts: localhost
+  vars:
+    kube_config_file: "/mnt/f/ROSA Demo/kube-access/config"
+    helm_repo_name: "ingress-nginx"
+    helm_repo_url: "https://kubernetes.github.io/ingress-nginx"
+    release_namespace: "ingress-nginx"
+    service_type: "LoadBalancer"
+    retries: 10
+    delay: 30
+  tasks:
+    - name: Add the NGINX Ingress Controller Helm repository
+      community.kubernetes.helm_repository:
+        name: "{{ release_namespace }}"
+        repo_url: "{{ helm_repo_url }}"
+      register: helm_repo
+
+    - name: Update Helm repositories
+      command: helm repo update
+      when: helm_repo is changed
+
+    - name: Create namespace for NGINX Ingress Controller
+      kubernetes.core.k8s:
+        kubeconfig: "{{ kube_config_file }}"
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Namespace
+          metadata:
+            name: "{{ release_namespace }}"
+
+    - name: Install NGINX Ingress Controller using Helm
+      community.kubernetes.helm:
+        name: nginx-ingress
+        chart_ref: ingress-nginx/ingress-nginx
+        release_namespace: "{{ release_namespace }}"
+        kubeconfig: "{{ kube_config_file }}"
+        values:
+          controller:
+            service:
+              type: LoadBalancer
+      register: helm_install
+
+    - name: Wait for NGINX Ingress Controller to be deployed and ready
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: nginx-ingress-ingress-nginx-controller
+        namespace: "{{ release_namespace }}"
+        kubeconfig: "{{ kube_config_file }}"
+      register: nginx_status
+      until: nginx_status.resources[0].status.readyReplicas == nginx_status.resources[0].status.replicas
+      retries: 10
+      delay: 30
+
+    - name: Output NGINX Ingress LoadBalancer IP
+      kubernetes.core.k8s_info:
+        api_version: v1
+        kind: Service
+        namespace: "{{ release_namespace }}"
+        name: nginx-ingress-ingress-nginx-controller
+        kubeconfig: "{{ kube_config_file }}"
+      register: nginx_service
+
+    - name: Show LoadBalancer IP
+      debug:
+        msg: "NGINX Ingress LoadBalancer IP: {{ nginx_service.resources[0].status.loadBalancer.ingress[0].ip }}"
+      when: nginx_service.resources[0].status.loadBalancer.ingress is defined
