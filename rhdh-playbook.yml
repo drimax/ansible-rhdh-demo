@@ -7,6 +7,8 @@
     cluster_admin: cluster-admin
     cluster_admin_pass: Password.54321
     cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
+    github_app_client_id: Ov23liEVcnaAl3kLEPC8
+    github_app_client_secret: fbbeb7b8d829158e03e5616aa7ec22e026515708
     retries: 10
     delay: 30
   tasks:
@@ -138,7 +140,7 @@
             "app-config-rhdh.yaml": |
               app:
                 title: Red Hat Developer Hub
-                baseUrl: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+                baseUrl: https://backstage-rh-developer-hub-{{ release_namespace }}.{{ cluster_api_url }}
               auth:
                 # see https://backstage.io/docs/auth/ to learn about auth providers
                 environment: development
@@ -151,9 +153,9 @@
                 auth:
                   keys:
                     - secret: "${BACKEND_SECRET}"
-                baseUrl: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+                baseUrl: https://backstage-rh-developer-hub-{{ release_namespace }}.{{ cluster_api_url }}
                 cors:
-                  origin: https://backstage-rh-developer-hub-rhdh-operator.apps.rosa.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com
+                  origin: https://backstage-rh-developer-hub-{{ release_namespace }}.{{ cluster_api_url }}
 
     - name: Create Secret secrets-rhdh
       kubernetes.core.k8s:
@@ -169,8 +171,8 @@
             namespace: "{{ release_namespace }}"
           data:
             BACKEND_SECRET: "{{ lookup('community.general.random_string', length=24, base64=True) }}"
-            GITHUB_APP_CLIENT_ID: "{{ 'Ov23liEVcnaAl3kLEPC8' | b64encode }}"
-            GITHUB_APP_CLIENT_SECRET: "{{ 'fbbeb7b8d829158e03e5616aa7ec22e026515708' | b64encode }}"
+            GITHUB_APP_CLIENT_ID: "{{ github_app_client_id | b64encode }}"
+            GITHUB_APP_CLIENT_SECRET: "{{ github_app_client_secret | b64encode }}"
             
     - name: Create Config map  dynamic-plugins-rhdh for dynamic plugins
       kubernetes.core.k8s:
