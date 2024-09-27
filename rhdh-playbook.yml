@@ -227,19 +227,6 @@
       when: operator_install_plan.resources[0].spec.approved == true
 
     - name: Wait for Red Hat Developer Hub instance to be ready
-      kubernetes.core.k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: rhdh.redhat.com/v1alpha1
-        kind: Backstage
-        name: rh-developer-hub
-        namespace: "{{ release_namespace }}"
-      register: rh_dev_hub_instance
-      retries: 10
-      delay: 30
-      until: rh_dev_hub_instance.resources[0].status.conditions[0].status == True
-
-    - name: Wait for Red Hat Developer Hub instance to be ready
       block:
         - name: Get deployment status
           kubernetes.core.k8s_info:
