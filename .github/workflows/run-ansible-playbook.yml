@@ -1,0 +1,36 @@
+name: Run Ansible Playbook
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-ansible-playbook:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Check out repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.x'
+
+    - name: Install Ansible
+      run: |
+        python -m pip install --upgrade pip
+        pip install ansible
+
+    - name: Install Ansible collections
+      run: |
+        ansible-galaxy collection install kubernetes.core
+        ansible-galaxy collection install community.general
+
+    - name: Run Ansible playbook
+      run: ansible-playbook rhdh-playbook.yml
+      env:
+        ANSIBLE_HOST_KEY_CHECKING: False
