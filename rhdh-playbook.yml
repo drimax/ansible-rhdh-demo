@@ -253,7 +253,7 @@
             kind: Pod
             namespace: "{{ release_namespace }}"
             label_selectors:
-              - "app.kubernetes.io/name=backstage-rh-developer-hub"
+              - "rhdh.redhat.com/app=backstage-rh-developer-hub"
           register: pod_info
           until:
             - pod_info.resources is defined
