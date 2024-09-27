@@ -41,7 +41,7 @@ jobs:
         sudo mv oc /usr/local/bin/
         sudo mv kubectl /usr/local/bin/
 
-    - name: Run Ansible playbook
-      run: ansible-playbook rhdh-playbook.yml
+    - name: Run Ansible playbook in debug mode
+      run: ansible-playbook rhdh-playbook.yml -vvv
       env:
         ANSIBLE_HOST_KEY_CHECKING: False
