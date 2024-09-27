@@ -238,3 +238,51 @@
       retries: 10
       delay: 30
       until: rh_dev_hub_instance.resources[0].status.conditions[0].status == True
+
+    - name: Wait for Red Hat Developer Hub instance to be ready
+      block:
+        - name: Get deployment status
+          kubernetes.core.k8s_info:
+            host: "{{ cluster_api_url }}"
+            api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+            api_version: apps/v1
+            kind: Deployment
+            namespace: "{{ release_namespace }}"
+            name: backstage-rh-developer-hub
+          register: deployment_info
+          until:
+            - deployment_info.resources is defined
+            - deployment_info.resources | length > 0
+            - deployment_info.resources[0].status.availableReplicas is defined
+            - deployment_info.resources[0].status.availableReplicas == deployment_info.resources[0].spec.replicas
+          retries: 30
+          delay: 10
+
+        - name: Get pod status
+          kubernetes.core.k8s_info:
+            host: "{{ cluster_api_url }}"
+            api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+            api_version: v1
+            kind: Pod
+            namespace: "{{ release_namespace }}"
+            label_selectors:
+              - "app.kubernetes.io/name=backstage-rh-developer-hub"
+          register: pod_info
+          until:
+            - pod_info.resources is defined
+            - pod_info.resources | length > 0
+            - pod_info.resources | map(attribute='status.phase') | list | unique == ['Running']
+            - pod_info.resources | map(attribute='status.containerStatuses') | flatten | map(attribute='ready') | list | unique == [true]
+          retries: 30
+          delay: 10
+
+        - name: Print status
+          debug:
+            msg: 
+              - "Deployment backstage-rh-developer-hub is ready with {{ deployment_info.resources[0].status.availableReplicas }} replicas."
+              - "All pods are running and ready."
+
+      rescue:
+        - name: Print error message
+          debug:
+            msg: "Failed to verify backstage-rh-developer-hub deployment and pods. Please check the Kubernetes resources manually."
