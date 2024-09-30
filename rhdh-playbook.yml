@@ -22,6 +22,8 @@
 
     - name: Get cluster domain
       kubernetes.core.k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: config.openshift.io/v1
         kind: Ingress
         name: cluster
