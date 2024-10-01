@@ -95,6 +95,8 @@
                   value: "true"
                 - name: pipelineTemplates
                   value: "true"
+            dashboard:
+              enable: true
 
     - name: Wait for TektonConfig to be ready
       k8s_info:
@@ -112,6 +114,27 @@
       debug:
         msg: "TektonConfig has been successfully created and is ready"
       when: tekton_config_status.resources[0].status.conditions[0].status == "True"
+
+    - name: Wait for Tekton Dashboard deployment
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: apps/v1
+        kind: Deployment
+        name: tekton-dashboard
+        namespace: "{{ namespace }}"
+      register: dashboard_deployment
+      until: 
+        - dashboard_deployment.resources is defined
+        - dashboard_deployment.resources | length > 0
+        - dashboard_deployment.resources[0].status.availableReplicas is defined
+        - dashboard_deployment.resources[0].status.availableReplicas > 0
+      retries: 15
+      delay: 30
+
+    - name: Display Tekton Dashboard deployment status
+      debug:
+        msg: "Tekton Dashboard deployment status: {{ dashboard_deployment.resources[0].status if dashboard_deployment.resources else 'Not found' }}"
 
     - name: Expose Tekton Dashboard
       k8s:
