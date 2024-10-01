@@ -89,7 +89,7 @@
             name: config
           spec:
             profile: all
-            targetNamespace: openshift-pipelines
+            targetNamespace: "{{ namespace }}"
             addon:
               params:
                 - name: clusterTasks
