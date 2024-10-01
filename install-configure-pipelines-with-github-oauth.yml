@@ -147,6 +147,24 @@
             approved: true
       when: latest_install_plan.spec.approved == false
 
+    - name: Wait for OpenShift Pipelines Operator CSV to be created
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: csv_status
+      until: csv_status.resources | length > 0
+      retries: 15
+      delay: 20
+
+    - name: Display CSV status
+      debug:
+        msg: "CSV Status: {{ csv_status.resources[0].status if csv_status.resources else 'No CSV found' }}"
+
     - name: Wait for OpenShift Pipelines Operator to be ready
       k8s_info:
         host: "{{ cluster_api_url }}"
@@ -158,15 +176,28 @@
           - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
       register: csv_status
       until: 
-        - csv_status.resources is defined
         - csv_status.resources | length > 0
+        - csv_status.resources[0].status.phase is defined
         - csv_status.resources[0].status.phase == "Succeeded"
       retries: 15
       delay: 30
 
     - name: Display OpenShift Pipelines Operator status
       debug:
-        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase }}"
+        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase if csv_status.resources else 'Not found' }}"
+
+    - name: Check for Tekton CRDs
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: apiextensions.k8s.io/v1
+        kind: CustomResourceDefinition
+        name: pipelines.tekton.dev
+      register: tekton_crd
+
+    - name: Display Tekton CRD status
+      debug:
+        msg: "Tekton Pipeline CRD: {{ 'Found' if tekton_crd.resources else 'Not found' }}"
 
     - name: Wait for tekton-operator-proxy-webhook service
       k8s_info:
