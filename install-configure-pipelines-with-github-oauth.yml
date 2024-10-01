@@ -18,7 +18,61 @@
         host: "{{ cluster_api_url }}"
         validate_certs: true 
       register: k8s_auth_results
-    
+
+    - name: Ensure OpenShift Pipelines Operator is installed
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: openshift-pipelines-operator-rh
+            namespace: openshift-operators
+          spec:
+            channel: stable
+            name: openshift-pipelines-operator-rh
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace
+
+    - name: Wait for OpenShift Pipelines Operator to be ready
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: csv_status
+      until: 
+        - csv_status.resources is defined
+        - csv_status.resources | length > 0
+        - csv_status.resources[0].status.phase == "Succeeded"
+      retries: 15
+      delay: 30
+
+    - name: Display OpenShift Pipelines Operator status
+      debug:
+        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase }}"
+
+    - name: Wait for tekton-operator-proxy-webhook service
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: v1
+        kind: Service
+        namespace: openshift-pipelines
+        name: tekton-operator-proxy-webhook
+      register: webhook_service
+      until: webhook_service.resources | length > 0
+      retries: 10
+      delay: 30
+
+    - name: Display tekton-operator-proxy-webhook service status
+      debug:
+        msg: "tekton-operator-proxy-webhook service is now {{ 'available' if webhook_service.resources else 'not available' }}"
+
     - name: Create the openshift-pipelines namespace
       kubernetes.core.k8s:
         host: "{{ cluster_api_url }}"
@@ -58,43 +112,6 @@
             source: redhat-operators
             sourceNamespace: openshift-marketplace
             installPlanApproval: Automatic
-
-    - name: Ensure OpenShift Pipelines Operator is installed
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operators.coreos.com/v1alpha1
-          kind: Subscription
-          metadata:
-            name: openshift-pipelines-operator-rh
-            namespace: openshift-operators
-          spec:
-            channel: stable
-            name: openshift-pipelines-operator-rh
-            source: redhat-operators
-            sourceNamespace: openshift-marketplace
-
-    - name: Wait for OpenShift Pipelines Operator to be ready
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        namespace: openshift-operators
-        label_selectors:
-          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
-      register: csv_status
-      until: 
-        - csv_status.resources is defined
-        - csv_status.resources | length > 0
-        - csv_status.resources[0].status.phase == "Succeeded"
-      retries: 10
-      delay: 30
-
-    - name: Display OpenShift Pipelines Operator status
-      debug:
-        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase }}"
 
     - name: Wait for OpenShift Pipelines Operator to be installed
       k8s_info:
