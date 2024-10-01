@@ -1,0 +1,105 @@
+---
+- name: Install and Configure OpenShift Pipelines
+  hosts: localhost
+  gather_facts: no
+  vars:
+    openshift_pipelines_channel: "stable"
+    openshift_pipelines_version: "1.15.1"  # Adjust this to the version you want
+    namespace: "devops"
+    cluster_admin: cluster-admin
+    cluster_admin_pass: Password.54321
+    cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
+
+  tasks:
+    - name: Create Auth Token for Openshift API
+      kubernetes.core.k8s_auth:
+        username: "{{ cluster_admin }}"
+        password: "{{ cluster_admin_pass }}"
+        host: "{{ cluster_api_url }}"
+        validate_certs: true 
+      register: k8s_auth_results
+
+    - name: Create OperatorGroup
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1
+          kind: OperatorGroup
+          metadata:
+            name: openshift-pipelines-operatorgroup
+            namespace: "{{ namespace }}"
+          spec:
+            targetNamespaces:
+              - "{{ namespace }}"
+
+    - name: Create Subscription for OpenShift Pipelines Operator
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: Subscription
+          metadata:
+            name: openshift-pipelines-operator
+            namespace: "{{ namespace }}"
+          spec:
+            channel: "{{ openshift_pipelines_channel }}"
+            name: openshift-pipelines-operator-rh
+            source: redhat-operators
+            sourceNamespace: openshift-marketplace
+            installPlanApproval: Automatic
+
+    - name: Wait for OpenShift Pipelines Operator to be installed
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "redhat-openshift-pipelines.v{{ openshift_pipelines_version }}"
+        namespace: "{{ namespace }}"
+      register: csv_status
+      until: csv_status.resources[0].status.phase == "Succeeded"
+      retries: 10
+      delay: 30
+
+    - name: Verify OpenShift Pipelines Operator installation
+      debug:
+        msg: "OpenShift Pipelines Operator has been successfully installed"
+      when: csv_status.resources[0].status.phase == "Succeeded"
+
+    - name: Create TektonConfig instance
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operator.tekton.dev/v1alpha1
+          kind: TektonConfig
+          metadata:
+            name: config
+          spec:
+            profile: all
+            targetNamespace: openshift-pipelines
+            addon:
+              params:
+                - name: clusterTasks
+                  value: "true"
+                - name: pipelineTemplates
+                  value: "true"
+
+    - name: Wait for TektonConfig to be ready
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operator.tekton.dev/v1alpha1
+        kind: TektonConfig
+        name: config
+      register: tekton_config_status
+      until: tekton_config_status.resources[0].status.conditions[0].status == "True"
+      retries: 10
+      delay: 30
+
+    - name: Verify TektonConfig creation
+      debug:
+        msg: "TektonConfig has been successfully created and is ready"
+      when: tekton_config_status.resources[0].status.conditions[0].status == "True"
