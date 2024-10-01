@@ -49,6 +49,52 @@
             sourceNamespace: openshift-marketplace
       when: existing_subscription.resources | length == 0
 
+    - name: Check for existing OpenShift Pipelines Operator CSV
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: existing_csv
+
+    - name: Display existing CSV status
+      debug:
+        msg: "Existing CSV: {{ existing_csv.resources[0].metadata.name if existing_csv.resources else 'Not found' }}"
+
+    - name: Check for pending InstallPlan
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: InstallPlan
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: install_plan
+
+    - name: Display InstallPlan status
+      debug:
+        msg: "InstallPlan: {{ install_plan.resources[0].status.phase if install_plan.resources else 'Not found' }}"
+
+    - name: Approve InstallPlan if needed
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: InstallPlan
+          metadata:
+            name: "{{ install_plan.resources[0].metadata.name }}"
+            namespace: openshift-operators
+          spec:
+            approved: true
+      when: 
+        - install_plan.resources | length > 0
+        - install_plan.resources[0].spec.approved == false
+
     - name: Wait for OpenShift Pipelines Operator CSV to be created
       k8s_info:
         host: "{{ cluster_api_url }}"
@@ -66,6 +112,23 @@
     - name: Display CSV status
       debug:
         msg: "CSV Status: {{ csv_status.resources[0].status if csv_status.resources else 'No CSV found' }}"
+
+    - name: Check Subscription status
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: openshift-pipelines-operator-rh
+        namespace: openshift-operators
+      register: subscription_status
+
+    - name: Display Subscription status
+      debug:
+        msg: 
+          - "Subscription status: {{ subscription_status.resources[0].status if subscription_status.resources else 'Not found' }}"
+          - "Current CSV: {{ subscription_status.resources[0].status.currentCSV if subscription_status.resources else 'Unknown' }}"
+          - "Install Plan: {{ subscription_status.resources[0].status.installPlanRef.name if subscription_status.resources and subscription_status.resources[0].status.installPlanRef else 'Unknown' }}"
 
     - name: Wait for OpenShift Pipelines Operator to be ready
       k8s_info:
