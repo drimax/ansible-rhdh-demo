@@ -41,7 +41,6 @@
             namespace: "{{ namespace }}"
           spec:
             targetNamespaces:
-              - "{{ namespace }}"
       when: namespace_created is succeeded
 
     - name: Create Subscription for OpenShift Pipelines Operator
