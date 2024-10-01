@@ -3,8 +3,7 @@
   hosts: localhost
   gather_facts: no
   vars:
-    openshift_pipelines_channel: "{{ pipelines_channel }}"
-    openshift_pipelines_version: "1.15.1"  # Adjust this to the version you want
+    openshift_pipelines_channel: "stable"  # You can manually set the desired channel here
     namespace: "openshift-pipelines"
     cluster_admin: cluster-admin
     cluster_admin_pass: Password.54321
@@ -18,28 +17,6 @@
         host: "{{ cluster_api_url }}"
         validate_certs: true 
       register: k8s_auth_results
-
-    - name: Get available channels for OpenShift Pipelines Operator
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: packages.operators.coreos.com/v1
-        kind: PackageManifest
-        name: openshift-pipelines-operator-rh
-        namespace: openshift-marketplace
-      register: package_manifest
-
-    - name: Display available channels
-      debug:
-        msg: "Available channels: {{ package_manifest.resources[0].status.channels | map(attribute='name') | list }}"
-
-    - name: Set OpenShift Pipelines Operator channel
-      set_fact:
-        pipelines_channel: "{{ package_manifest.resources[0].status.channels | map(attribute='name') | sort | last }}"
-
-    - name: Display selected channel
-      debug:
-        msg: "Selected channel for OpenShift Pipelines Operator: {{ pipelines_channel }}"
 
     - name: Check for existing OpenShift Pipelines Operator Subscription
       k8s_info:
@@ -66,7 +43,7 @@
             name: openshift-pipelines-operator-rh
             namespace: openshift-operators
           spec:
-            channel: "{{ pipelines_channel }}"
+            channel: "{{ openshift_pipelines_channel }}"
             name: openshift-pipelines-operator-rh
             source: redhat-operators
             sourceNamespace: openshift-marketplace
