@@ -95,8 +95,12 @@
                   value: "true"
                 - name: pipelineTemplates
                   value: "true"
-            dashboard:
+            pipeline:
               enable: true
+            trigger:
+              enable: true
+            dashboard:
+              readonly: false
 
     - name: Wait for TektonConfig to be ready
       k8s_info:
