@@ -41,6 +41,59 @@
       debug:
         msg: "Selected channel for OpenShift Pipelines Operator: {{ pipelines_channel }}"
 
+    - name: Check for existing OpenShift Pipelines Operator
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: existing_csv
+
+    - name: Display existing OpenShift Pipelines Operator version
+      debug:
+        msg: "Existing OpenShift Pipelines Operator version: {{ existing_csv.resources[0].spec.version }}"
+      when: existing_csv.resources | length > 0
+
+    - name: Remove existing Subscription if present
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: Subscription
+        name: openshift-pipelines-operator-rh
+        namespace: openshift-operators
+        state: absent
+      when: existing_csv.resources | length > 0
+
+    - name: Remove existing CSV if present
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        name: "{{ existing_csv.resources[0].metadata.name }}"
+        namespace: openshift-operators
+        state: absent
+      when: existing_csv.resources | length > 0
+
+    - name: Wait for existing CSV to be removed
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: ClusterServiceVersion
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: csv_check
+      until: csv_check.resources | length == 0
+      retries: 10
+      delay: 10
+      when: existing_csv.resources | length > 0
+
     - name: Ensure OpenShift Pipelines Operator is installed
       k8s:
         host: "{{ cluster_api_url }}"
@@ -53,7 +106,6 @@
             namespace: openshift-operators
           spec:
             channel: "{{ pipelines_channel }}"
-            installPlanApproval: Manual
             name: openshift-pipelines-operator-rh
             source: redhat-operators
             sourceNamespace: openshift-marketplace
