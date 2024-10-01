@@ -57,6 +57,43 @@
             source: redhat-operators
             sourceNamespace: openshift-marketplace
 
+    - name: Wait for InstallPlan to be created
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1alpha1
+        kind: InstallPlan
+        namespace: openshift-operators
+        label_selectors:
+          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
+      register: install_plan
+      until: install_plan.resources | length > 0
+      retries: 10
+      delay: 10
+
+    - name: Get the latest InstallPlan
+      set_fact:
+        latest_install_plan: "{{ install_plan.resources | sort(attribute='metadata.creationTimestamp') | last }}"
+
+    - name: Check if InstallPlan requires approval
+      debug:
+        msg: "InstallPlan {{ latest_install_plan.metadata.name }} requires approval"
+      when: latest_install_plan.spec.approved == false
+
+    - name: Approve InstallPlan if needed
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: InstallPlan
+          metadata:
+            name: "{{ latest_install_plan.metadata.name }}"
+            namespace: openshift-operators
+          spec:
+            approved: true
+      when: latest_install_plan.spec.approved == false
+
     - name: Wait for OpenShift Pipelines Operator to be ready
       k8s_info:
         host: "{{ cluster_api_url }}"
