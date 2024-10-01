@@ -18,6 +18,16 @@
         host: "{{ cluster_api_url }}"
         validate_certs: true 
       register: k8s_auth_results
+    
+    - name: Create a namespace with token  
+      kubernetes.core.k8s:
+        host: "{{ cluster_api_url }}"
+        name: "{{ namespace }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"  
+        api_version: v1
+        kind: Namespace
+        state: present
+      register: namespace_created
 
     - name: Create OperatorGroup
       k8s:
@@ -32,6 +42,7 @@
           spec:
             targetNamespaces:
               - "{{ namespace }}"
+      when: namespace_created is succeeded
 
     - name: Create Subscription for OpenShift Pipelines Operator
       k8s:
