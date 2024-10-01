@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: no
   vars:
-    openshift_pipelines_channel: "stable"
+    openshift_pipelines_channel: "latest"
     openshift_pipelines_version: "1.15.1"  # Adjust this to the version you want
     namespace: "devops"
     cluster_admin: cluster-admin
