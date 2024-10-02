@@ -39,6 +39,7 @@
             namespace: openshift-operators
           spec:
             channel: "{{ openshift_pipelines_channel }}"
+            installPlanApproval: Manual
             name: openshift-pipelines-operator-rh
             source: redhat-operators
             sourceNamespace: openshift-marketplace
