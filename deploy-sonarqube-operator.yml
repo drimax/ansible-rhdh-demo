@@ -8,14 +8,8 @@
     cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
     devops_namespace: devops
     sonarqube_channel: "alpha"  # Adjust this based on available channels
-
-  vars_prompt:
-    - name: github_client_id
-      prompt: "Enter your GitHub OAuth App Client ID"
-      private: no
-    - name: github_client_secret
-      prompt: "Enter your GitHub OAuth App Client Secret"
-      private: yes
+    github_client_id: "{{ lookup('env', 'GITHUB_CLIENT_ID') }}"
+    github_client_secret: "{{ lookup('env', 'GITHUB_CLIENT_SECRET') }}"
 
   tasks:
     - name: Create Auth Token for OpenShift API
@@ -39,11 +33,7 @@
       set_fact:
         cluster_domain: "{{ ingress_info.resources[0].spec.domain }}"
 
-    - name: Set SonarQube URL
-      set_fact:
-        sonarqube_url: "https://sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
-
-    - name: Display SonarQube URL
+    - name: Display cluster domain
       debug:
         msg: "SonarQube will be accessible at: {{ sonarqube_url }}"
 

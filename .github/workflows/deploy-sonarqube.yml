@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: [ main ]
   workflow_dispatch:
+    inputs:
+      github_client_id:
+        description: 'GitHub OAuth App Client ID'
+        required: true
+      github_client_secret:
+        description: 'GitHub OAuth App Client Secret'
+        required: true
 
 jobs:
   deploy:
@@ -30,5 +37,8 @@ jobs:
         oc_version: '4.6'
 
     - name: Run Ansible playbook
+      env:
+        GITHUB_CLIENT_ID: ${{ inputs.github_client_id != '' && inputs.github_client_id || secrets.GITHUB_CLIENT_ID }}
+        GITHUB_CLIENT_SECRET: ${{ inputs.github_client_secret != '' && inputs.github_client_secret || secrets.GITHUB_CLIENT_SECRET }}
       run: |
         ansible-playbook deploy-sonarqube-operator.yml -v
