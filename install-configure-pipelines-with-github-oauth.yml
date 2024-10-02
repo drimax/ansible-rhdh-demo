@@ -3,7 +3,7 @@
   hosts: localhost
   gather_facts: no
   vars:
-    openshift_pipelines_channel: "stable"  # Adjust this if needed
+    openshift_pipelines_channel: "latest"  # Adjust this if needed
     cluster_admin: cluster-admin
     cluster_admin_pass: Password.54321
     cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
