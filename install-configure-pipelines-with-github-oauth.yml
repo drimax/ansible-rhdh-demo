@@ -1,16 +1,15 @@
 ---
-- name: Install and Configure OpenShift Pipelines (Tekton)
+- name: Install OpenShift Pipelines Operator
   hosts: localhost
   gather_facts: no
   vars:
-    openshift_pipelines_channel: "stable"  # You can manually set the desired channel here
-    namespace: "openshift-pipelines"
+    openshift_pipelines_channel: "stable"  # Adjust this if needed
     cluster_admin: cluster-admin
     cluster_admin_pass: Password.54321
     cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
 
   tasks:
-    - name: Create Auth Token for Openshift API
+    - name: Create Auth Token for OpenShift API
       kubernetes.core.k8s_auth:
         username: "{{ cluster_admin }}"
         password: "{{ cluster_admin_pass }}"
@@ -28,11 +27,7 @@
         namespace: openshift-operators
       register: existing_subscription
 
-    - name: Display existing Subscription status
-      debug:
-        msg: "Existing Subscription: {{ 'Found' if existing_subscription.resources else 'Not found' }}"
-
-    - name: Ensure OpenShift Pipelines Operator Subscription
+    - name: Create OpenShift Pipelines Operator Subscription
       k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
@@ -49,22 +44,7 @@
             sourceNamespace: openshift-marketplace
       when: existing_subscription.resources | length == 0
 
-    - name: Check for existing OpenShift Pipelines Operator CSV
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        namespace: openshift-operators
-        label_selectors:
-          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
-      register: existing_csv
-
-    - name: Display existing CSV status
-      debug:
-        msg: "Existing CSV: {{ existing_csv.resources[0].metadata.name if existing_csv.resources else 'Not found' }}"
-
-    - name: Check for pending InstallPlan
+    - name: Wait for OpenShift Pipelines Operator InstallPlan
       k8s_info:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
@@ -74,10 +54,9 @@
         label_selectors:
           - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
       register: install_plan
-
-    - name: Display InstallPlan status
-      debug:
-        msg: "InstallPlan: {{ install_plan.resources[0].status.phase if install_plan.resources else 'Not found' }}"
+      until: install_plan.resources | length > 0
+      retries: 10
+      delay: 10
 
     - name: Approve InstallPlan if needed
       k8s:
@@ -95,42 +74,7 @@
         - install_plan.resources | length > 0
         - install_plan.resources[0].spec.approved == false
 
-    - name: Wait for OpenShift Pipelines Operator CSV to be created
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        namespace: openshift-operators
-        label_selectors:
-          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
-      register: csv_status
-      until: csv_status.resources | length > 0
-      retries: 15
-      delay: 20
-
-    - name: Display CSV status
-      debug:
-        msg: "CSV Status: {{ csv_status.resources[0].status if csv_status.resources else 'No CSV found' }}"
-
-    - name: Check Subscription status
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: Subscription
-        name: openshift-pipelines-operator-rh
-        namespace: openshift-operators
-      register: subscription_status
-
-    - name: Display Subscription status
-      debug:
-        msg: 
-          - "Subscription status: {{ subscription_status.resources[0].status if subscription_status.resources else 'Not found' }}"
-          - "Current CSV: {{ subscription_status.resources[0].status.currentCSV if subscription_status.resources else 'Unknown' }}"
-          - "Install Plan: {{ subscription_status.resources[0].status.installPlanRef.name if subscription_status.resources and subscription_status.resources[0].status.installPlanRef else 'Unknown' }}"
-
-    - name: Wait for OpenShift Pipelines Operator to be ready
+    - name: Wait for OpenShift Pipelines Operator CSV to be ready
       k8s_info:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
@@ -145,13 +89,13 @@
         - csv_status.resources[0].status.phase is defined
         - csv_status.resources[0].status.phase == "Succeeded"
       retries: 15
-      delay: 30
+      delay: 20
 
     - name: Display OpenShift Pipelines Operator status
       debug:
-        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase if csv_status.resources else 'Not found' }}"
+        msg: "OpenShift Pipelines Operator is now {{ csv_status.resources[0].status.phase }}"
 
-    - name: Check for Tekton CRDs
+    - name: Verify Tekton CRDs
       k8s_info:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
@@ -162,257 +106,4 @@
 
     - name: Display Tekton CRD status
       debug:
-        msg: "Tekton Pipeline CRD: {{ 'Found' if tekton_crd.resources else 'Not found' }}"
-
-    - name: Wait for tekton-operator-proxy-webhook service
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: v1
-        kind: Service
-        namespace: openshift-pipelines
-        name: tekton-operator-proxy-webhook
-      register: webhook_service
-      until: webhook_service.resources | length > 0
-      retries: 10
-      delay: 30
-
-    - name: Display tekton-operator-proxy-webhook service status
-      debug:
-        msg: "tekton-operator-proxy-webhook service is now {{ 'available' if webhook_service.resources else 'not available' }}"
-
-    - name: Create the openshift-pipelines namespace
-      kubernetes.core.k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: v1
-        kind: Namespace
-        name: "{{ namespace }}"
-        state: present
-      register: namespace_created
-
-    - name: Create OperatorGroup for OpenShift Pipelines
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operators.coreos.com/v1
-          kind: OperatorGroup
-          metadata:
-            name: openshift-pipelines-operatorgroup
-            namespace: "{{ namespace }}"
-          spec: {}
-      when: namespace_created is succeeded
-
-    - name: Create Subscription for OpenShift Pipelines Operator
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operators.coreos.com/v1alpha1
-          kind: Subscription
-          metadata:
-            name: openshift-pipelines-operator
-            namespace: "{{ namespace }}"
-          spec:
-            channel: "{{ openshift_pipelines_channel }}"
-            name: openshift-pipelines-operator-rh
-            source: redhat-operators
-            sourceNamespace: openshift-marketplace
-            installPlanApproval: Automatic
-
-    - name: Wait for OpenShift Pipelines Operator to be installed
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        name: "openshift-pipelines-operator-rh.v{{ openshift_pipelines_version }}"
-        namespace: "{{ namespace }}"
-      register: csv_status
-      until: csv_status.resources[0].status.phase == "Succeeded"
-      retries: 10
-      delay: 30
-
-    - name: Verify OpenShift Pipelines Operator installation
-      debug:
-        msg: "OpenShift Pipelines Operator has been successfully installed"
-      when: csv_status.resources[0].status.phase == "Succeeded"
-
-    - name: Check OpenShift Pipelines Operator status
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: ClusterServiceVersion
-        namespace: openshift-operators
-        label_selectors:
-          - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
-      register: operator_status
-
-    - name: Display OpenShift Pipelines Operator status
-      debug:
-        msg: "OpenShift Pipelines Operator status: {{ operator_status.resources[0].status.phase if operator_status.resources else 'Not found' }}"
-
-    - name: Check for tekton-operator-proxy-webhook service
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: v1
-        kind: Service
-        namespace: openshift-pipelines
-        name: tekton-operator-proxy-webhook
-      register: webhook_service
-
-    - name: Display tekton-operator-proxy-webhook service status
-      debug:
-        msg: "tekton-operator-proxy-webhook service: {{ 'Found' if webhook_service.resources else 'Not found' }}"
-
-    - name: Wait for tekton-operator-proxy-webhook service
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: v1
-        kind: Service
-        namespace: openshift-pipelines
-        name: tekton-operator-proxy-webhook
-      register: webhook_service
-      until: webhook_service.resources | length > 0
-      retries: 10
-      delay: 30
-
-    - name: Display tekton-operator-proxy-webhook service status
-      debug:
-        msg: "tekton-operator-proxy-webhook service is now {{ 'available' if webhook_service.resources else 'not available' }}"
-
-    - name: Create TektonConfig instance
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operator.tekton.dev/v1alpha1
-          kind: TektonConfig
-          metadata:
-            name: config
-          spec:
-            profile: all
-            targetNamespace: "{{ namespace }}"
-            addon:
-              params:
-                - name: clusterTasks
-                  value: "true"
-                - name: pipelineTemplates
-                  value: "true"
-            pipeline:
-              enable: true
-            trigger:
-              enable: true
-            dashboard:
-              readonly: false
-
-    - name: Wait for TektonConfig to be ready
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operator.tekton.dev/v1alpha1
-        kind: TektonConfig
-        name: config
-      register: tekton_config_status
-      until: tekton_config_status.resources[0].status.conditions[0].status == "True"
-      retries: 10
-      delay: 30
-
-    - name: Verify TektonConfig creation
-      debug:
-        msg: "TektonConfig has been successfully created and is ready"
-      when: tekton_config_status.resources[0].status.conditions[0].status == "True"
-
-    - name: Wait for Tekton Dashboard deployment
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: apps/v1
-        kind: Deployment
-        name: tekton-dashboard
-        namespace: "{{ namespace }}"
-      register: dashboard_deployment
-      until: 
-        - dashboard_deployment.resources is defined
-        - dashboard_deployment.resources | length > 0
-        - dashboard_deployment.resources[0].status.availableReplicas is defined
-        - dashboard_deployment.resources[0].status.availableReplicas > 0
-      retries: 15
-      delay: 30
-
-    - name: Display Tekton Dashboard deployment status
-      debug:
-        msg: "Tekton Dashboard deployment status: {{ dashboard_deployment.resources[0].status if dashboard_deployment.resources else 'Not found' }}"
-
-    - name: Expose Tekton Dashboard
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: route.openshift.io/v1
-          kind: Route
-          metadata:
-            name: tekton-dashboard
-            namespace: "{{ namespace }}"
-          spec:
-            to:
-              kind: Service
-              name: tekton-dashboard
-            tls:
-              termination: edge
-              insecureEdgeTerminationPolicy: Redirect
-
-    - name: Get Tekton Dashboard URL
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: route.openshift.io/v1
-        kind: Route
-        name: tekton-dashboard
-        namespace: "{{ namespace }}"
-      register: dashboard_route
-
-    - name: Display Tekton Dashboard URL
-      debug:
-        msg: "Tekton Dashboard is accessible at: https://{{ dashboard_route.resources[0].spec.host }}"
-      when: dashboard_route.resources | length > 0
-
-    - name: Create TektonPipeline
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operator.tekton.dev/v1alpha1
-          kind: TektonPipeline
-          metadata:
-            name: pipeline
-          spec:
-            targetNamespace: "{{ namespace }}"
-
-    - name: Create TektonTrigger
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operator.tekton.dev/v1alpha1
-          kind: TektonTrigger
-          metadata:
-            name: trigger
-          spec:
-            targetNamespace: "{{ namespace }}"
-
-    - name: Create TektonDashboard
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operator.tekton.dev/v1alpha1
-          kind: TektonDashboard
-          metadata:
-            name: dashboard
-          spec:
-            targetNamespace: "{{ namespace }}"
+        msg: "Tekton Pipeline CRD: {{ 'Installed' if tekton_crd.resources else 'Not installed' }}"

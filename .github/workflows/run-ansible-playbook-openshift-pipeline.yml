@@ -30,6 +30,6 @@ jobs:
 
     - name: Run Ansible playbook
       run: |
-        ansible-playbook install-configure-pipelines-with-github-oauth.yml -vvv
+        ansible-playbook install-configure-pipelines-with-github-oauth.yml -v
       env:
         ANSIBLE_HOST_KEY_CHECKING: False
