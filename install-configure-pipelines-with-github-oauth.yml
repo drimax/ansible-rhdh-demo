@@ -55,9 +55,18 @@
         label_selectors:
           - "operators.coreos.com/openshift-pipelines-operator-rh.openshift-operators"
       register: install_plan
-      until: install_plan.resources | length > 0
-      retries: 10
+      until: 
+        - install_plan.resources | length > 0
+        - install_plan.resources[0].spec is defined
+        - install_plan.resources[0].spec.approved is defined
+      retries: 30
       delay: 10
+
+    - name: Display InstallPlan status
+      debug:
+        msg: 
+          - "InstallPlan Name: {{ install_plan.resources[0].metadata.name }}"
+          - "Approval Status: {{ install_plan.resources[0].spec.approved }}"
 
     - name: Approve InstallPlan if needed
       k8s:
