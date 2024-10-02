@@ -8,8 +8,8 @@
     cluster_api_url: https://api.e5n9l5l2t8z7q0d.qnbq.p3.openshiftapps.com:443
     devops_namespace: devops
     sonarqube_channel: "alpha"  # Adjust this based on available channels
-    github_client_id: "{{ lookup('env', 'GITHUB_CLIENT_ID') }}"
-    github_client_secret: "{{ lookup('env', 'GITHUB_CLIENT_SECRET') }}"
+    github_client_id: Ov23liSuUqmknk1PiZO5
+    github_client_secret: 8906a0f76e0a81ffeafbc35b419ce3d54cfc5cee
 
   tasks:
     - name: Create Auth Token for OpenShift API
