@@ -70,173 +70,80 @@
             client-id: "{{ github_client_id }}"
             client-secret: "{{ github_client_secret }}"
 
-    - name: Create OperatorGroup for SonarQube
-      k8s:
+    - name: Create OperatorGroup for EDP Sonar Operator
+      kubernetes:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
           apiVersion: operators.coreos.com/v1
           kind: OperatorGroup
           metadata:
-            name: devops-operator-group
+            name: edp-sonar-operatorgroup
             namespace: "{{ devops_namespace }}"
           spec:
             targetNamespaces:
               - "{{ devops_namespace }}"
 
-    - name: Create SonarQube Operator Subscription
-      k8s:
+    - name: Create EDP Sonar Operator Subscription
+      kubernetes:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
           apiVersion: operators.coreos.com/v1alpha1
           kind: Subscription
           metadata:
-            name: sonarqube-operator
-            namespace: openshift-operators
+            name: edp-sonar-operator
+            namespace: "{{ devops_namespace }}"
           spec:
-            channel: stable
-            name: sonarqube-operator
+            channel: "alpha"
+            name: edp-sonar-operator
             source: community-operators
             sourceNamespace: openshift-marketplace
+            installPlanApproval: Automatic
 
-    - name: Wait for SonarQube Operator CSV to be ready
-      k8s_info:
+    - name: Wait for EDP Sonar Operator to be ready
+      kubernetes:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: operators.coreos.com/v1alpha1
         kind: ClusterServiceVersion
-        namespace: openshift-operators
-        label_selectors:
-          - "operators.coreos.com/sonarqube-operator.{{ devops_namespace }}"
-      register: csv_status
-      until: 
-        - csv_status.resources | length > 0
-        - csv_status.resources[0].status.phase is defined
-        - csv_status.resources[0].status.phase == "Succeeded"
-      retries: 15
-      delay: 20
-
-    - name: Display SonarQube Operator status
-      debug:
-        msg: "SonarQube Operator is now {{ csv_status.resources[0].status.phase }}"
-
-    - name: Check if sonarqube-db-secret exists
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        kind: Secret
-        name: sonarqube-db-secret
+        name: "edp-sonar-operator.v{{ edp_sonar_operator_version }}"
         namespace: "{{ devops_namespace }}"
-      register: db_secret
+      register: csv_status
+      until: csv_status.result.status.phase == 'Succeeded'
+      retries: 15
+      delay: 60
 
-    - name: Create sonarqube-db-secret if it doesn't exist
-      k8s:
+    - name: Display CSV status
+      debug:
+        var: csv_status
+
+    - name: Deploy Sonar instance
+      kubernetes:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
-          apiVersion: v1
-          kind: Secret
+          apiVersion: v2.edp.epam.com/v1
+          kind: Sonar
           metadata:
-            name: sonarqube-db-secret
-            namespace: "{{ devops_namespace }}"
-          type: Opaque
-          stringData:
-            password: "{{ lookup('password', '/dev/null chars=ascii_letters,digits length=16') }}"
-      when: db_secret.resources | length == 0
-
-    - name: Create SonarQube instance
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: sonarqube.com/v1alpha1
-          kind: SonarQube
-          metadata:
-            name: sonarqube
+            name: sonar
             namespace: "{{ devops_namespace }}"
           spec:
-            editionType: community
-            deploymentType: StatefulSet
-            image: sonarqube:9.9-community
-            replicas: 1
-            resources:
-              requests:
-                cpu: 500m
-                memory: 1Gi
-              limits:
-                cpu: 2000m
-                memory: 4Gi
-            persistence:
-              enabled: true
-              storageClass: "gp2"  # Adjust this to your cluster's available storage class
-              size: 10Gi
-            database:
-              type: postgresql
-              provider: Managed
-              size: 5Gi
-            route:
+            type: Sonar
+            version: "9.9.0"
+            basePath: "/"
+            imagePullSecrets: []
+            ingress:
               enabled: true
               host: "sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
-              tls:
-                termination: edge
-                insecureEdgeTerminationPolicy: Redirect
-            env:
-              - name: SONAR_JDBC_USERNAME
-                value: sonarqube
-              - name: SONAR_JDBC_PASSWORD
-                valueFrom:
-                  secretKeyRef:
-                    name: sonarqube-db-secret
-                    key: password
-              - name: SONAR_WEB_CONTEXT
-                value: "/"
-              # GitHub Authentication Configuration
-              - name: SONAR_CORE_SERVERBASEURL
-                value: "{{ sonarqube_url }}"
-              - name: SONAR_AUTH_GITHUB_ENABLED
-                value: "true"
-              - name: SONAR_AUTH_GITHUB_CLIENTID
-                valueFrom:
-                  secretKeyRef:
-                    name: github-oauth-secret
-                    key: client-id
-              - name: SONAR_AUTH_GITHUB_CLIENTSECRET
-                valueFrom:
-                  secretKeyRef:
-                    name: github-oauth-secret
-                    key: client-secret
-              - name: SONAR_AUTH_GITHUB_ALLOWUSERSTOSIGNUP
-                value: "true"
-              - name: SONAR_AUTH_GITHUB_ORGANIZATIONS
-                value: "your-github-org"  # Replace with your GitHub organization name
-            plugins:
-              - name: sonar-java-plugin
-                version: "7.16.0.30901"
-              - name: sonar-javascript-plugin
-                version: "9.13.0.20537"
-
-    - name: Wait for SonarQube instance to be ready
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: sonarqube.com/v1alpha1
-        kind: SonarQube
-        name: sonarqube
-        namespace: "{{ devops_namespace }}"
-      register: sonarqube_instance
-      until: 
-        - sonarqube_instance.resources | length > 0
-        - sonarqube_instance.resources[0].status is defined
-        - sonarqube_instance.resources[0].status.ready is defined
-        - sonarqube_instance.resources[0].status.ready == true
-      retries: 30
-      delay: 20
-
-    - name: Display SonarQube instance status
-      debug:
-        msg: "SonarQube instance is now ready"
-
-    - name: Display SonarQube URL
-      debug:
-        msg: "SonarQube is accessible at: https://sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
+            storage:
+              class: "gp2"
+              size: 1Gi
+            database:
+              externalDb:
+                enabled: false
+            githubAuth:
+              enabled: true
+              clientId: "{{ github_client_id }}"
+              clientSecret: "{{ github_client_secret }}"
+              organizations: "{{ github_organizations | default([]) }}"
