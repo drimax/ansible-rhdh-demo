@@ -191,27 +191,6 @@
               enabled: true
               host: "sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
 
-    - name: Update SonarQube deployment
-      kubernetes.core.k8s:
-        state: present
-        definition:
-          apiVersion: apps/v1
-          kind: Deployment
-          metadata:
-            name: sonarqube
-            namespace: "{{ namespace }}"
-          spec:
-            template:
-              spec:
-                containers:
-                - name: sonarqube
-                  envFrom:
-                  - secretRef:
-                      name: github-oauth-secret
-                  env:
-                  - name: SONAR_AUTH_GITHUB_ENABLED
-                    value: "true"
-
     - name: Wait for SonarQube instance to be ready
       k8s:
         host: "{{ cluster_api_url }}"
