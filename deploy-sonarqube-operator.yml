@@ -24,9 +24,9 @@
       k8s_info:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: config.openshift.io/v1
         kind: Ingress
-        name: router-default
-        namespace: openshift-ingress
+        name: cluster
       register: ingress_info
 
     - name: Set cluster domain fact
