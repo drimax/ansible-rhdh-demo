@@ -33,9 +33,13 @@
       set_fact:
         cluster_domain: "{{ ingress_info.resources[0].spec.domain }}"
 
-    - name: Display cluster domain
-      debug:
-        msg: "SonarQube will be accessible at: {{ sonarqube_url }}"
+    - name: Generate SonarQube URL
+      ansible.builtin.set_fact:
+        sonarqube_url: "https://sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
+
+    - name: Display SonarQube URL
+      ansible.builtin.debug:
+        msg: "SonarQube URL: {{ sonarqube_url }}"
 
     - name: Display GitHub OAuth Callback URL
       debug:
