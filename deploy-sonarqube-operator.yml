@@ -192,17 +192,31 @@
               host: "sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
 
     - name: Wait for SonarQube instance to be ready
-      k8s:
+      kubernetes.core.k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: sonarqube
+        namespace: "{{ devops_namespace | default('default') }}"
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: redhatgov.io/v1alpha1
-        kind: Sonarqube
-        name: sonarqube
-        namespace: "{{ devops_namespace }}"
-      register: sonarqube_status
-      until: sonarqube_status.result.status.ready is defined and sonarqube_status.result.status.ready
+      register: deploy
+      until: 
+        - deploy.resources is defined
+        - deploy.resources | length > 0
+        - deploy.resources[0].status is defined
+        - deploy.resources[0].status.availableReplicas is defined
+        - deploy.resources[0].status.availableReplicas == deploy.resources[0].spec.replicas
       retries: 30
-      delay: 60
+      delay: 10
+
+    - name: Verify SonarQube is responding
+      uri:
+        url: "http://{{ sonarqube_url }}/api/system/status"
+        return_content: yes
+      register: sonarqube_status
+      until: sonarqube_status.status == 200 and sonarqube_status.json.status == "UP"
+      retries: 30
+      delay: 10
 
     - name: Display SonarQube URL
       debug:
