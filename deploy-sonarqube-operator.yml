@@ -95,10 +95,9 @@
           kind: OperatorGroup
           metadata:
             name: sonarqube-operator-group
-            namespace: "{{ devops_namespace }}"
+            namespace: openshift-operators
           spec:
             targetNamespaces:
-              - "{{ devops_namespace }}"
 
     - name: Subscribe to SonarQube Operator
       k8s:
@@ -109,7 +108,7 @@
           kind: Subscription
           metadata:
             name: sonarqube-operator
-            namespace: "{{ devops_namespace }}"
+            namespace: openshift-operators
           spec:
             channel: alpha
             name: sonarqube-operator
@@ -122,8 +121,8 @@
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: operators.coreos.com/v1alpha1
         kind: ClusterServiceVersion
-        name: "sonarqube-operator.v0.0.1"
-        namespace: "{{ devops_namespace }}"
+        name: "sonarqube-operator.v0.0.5"
+        namespace: OperatorGroup
       register: csv_status
       until: csv_status.result.status.phase == 'Succeeded'
       retries: 15
