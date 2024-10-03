@@ -113,7 +113,7 @@
           spec:
             targetNamespaces:
               - "{{ devops_namespace }}"
-        when: existing_operator_groups.resources | length == 0
+      when: existing_operator_groups.resources | length == 0
 
     - name: Subscribe to SonarQube Operator
       k8s:
