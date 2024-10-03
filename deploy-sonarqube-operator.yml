@@ -86,7 +86,21 @@
             displayName: Red Hat NAPS Community Operators
             publisher: RedHatGov
 
-    - name: Create Operator Group
+    - name: Check for existing OperatorGroups
+      k8s_info:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: operators.coreos.com/v1
+        kind: OperatorGroup
+        namespace: "{{ devops_namespace }}"
+      register: existing_operator_groups
+
+    - name: Fail if multiple OperatorGroups exist
+      fail:
+        msg: "Multiple OperatorGroups found in {{ devops_namespace }}. Please remove extra OperatorGroups and retry."
+      when: existing_operator_groups.resources | length > 1
+
+    - name: Create Operator Group in devops namespace
       k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
@@ -94,10 +108,12 @@
           apiVersion: operators.coreos.com/v1
           kind: OperatorGroup
           metadata:
-            name: sonarqube-operator-group
-            namespace: openshift-operators
+            name: "{{ devops_namespace }}-operator-group"
+            namespace: "{{ devops_namespace }}"
           spec:
             targetNamespaces:
+              - "{{ devops_namespace }}"
+        when: existing_operator_groups.resources | length == 0
 
     - name: Subscribe to SonarQube Operator
       k8s:
@@ -108,7 +124,7 @@
           kind: Subscription
           metadata:
             name: sonarqube-operator
-            namespace: openshift-operators
+            namespace: "{{ devops_namespace }}"
           spec:
             channel: alpha
             name: sonarqube-operator
@@ -116,17 +132,26 @@
             sourceNamespace: openshift-marketplace
 
     - name: Wait for SonarQube Operator to be ready
-      k8s:
+      k8s_info:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: operators.coreos.com/v1alpha1
         kind: ClusterServiceVersion
-        name: "sonarqube-operator.v0.0.5"
-        namespace: OperatorGroup
+        namespace: "{{ devops_namespace }}"
+        label_selectors:
+          - operators.coreos.com/sonarqube-operator.{{ devops_namespace }}
       register: csv_status
-      until: csv_status.result.status.phase == 'Succeeded'
+      until: 
+        - csv_status.resources | length > 0
+        - csv_status.resources[0].status is defined
+        - csv_status.resources[0].status.phase is defined
+        - csv_status.resources[0].status.phase == 'Succeeded'
       retries: 15
       delay: 60
+
+    - name: Display CSV status
+      debug:
+        var: csv_status
 
     - name: Deploy SonarQube instance
       k8s:
