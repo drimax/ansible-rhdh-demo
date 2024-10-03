@@ -57,7 +57,9 @@
             name: "{{ devops_namespace }}"
 
     - name: Create GitHub OAuth secret
-      kubernetes.core.k8s:
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         state: present
         definition:
           apiVersion: v1
