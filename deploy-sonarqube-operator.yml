@@ -93,51 +93,12 @@
           kind: Subscription
           metadata:
             name: sonarqube-operator
-            namespace: "{{ devops_namespace }}"
+            namespace: openshift-operators
           spec:
-            channel: "{{ sonarqube_channel }}"
+            channel: stable
             name: sonarqube-operator
             source: community-operators
             sourceNamespace: openshift-marketplace
-
-    - name: Wait for SonarQube Operator InstallPlan
-      k8s_info:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        api_version: operators.coreos.com/v1alpha1
-        kind: InstallPlan
-        namespace: "{{ devops_namespace }}"
-        label_selectors:
-          - "operators.coreos.com/sonarqube-operator.{{ devops_namespace }}"
-      register: install_plan
-      until: 
-        - install_plan.resources | length > 0
-        - install_plan.resources[0].spec is defined
-        - install_plan.resources[0].spec.approved is defined
-      retries: 30
-      delay: 10
-
-    - name: Display InstallPlan status
-      debug:
-        msg: 
-          - "InstallPlan Name: {{ install_plan.resources[0].metadata.name }}"
-          - "Approval Status: {{ install_plan.resources[0].spec.approved }}"
-
-    - name: Approve InstallPlan if needed
-      k8s:
-        host: "{{ cluster_api_url }}"
-        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
-        definition:
-          apiVersion: operators.coreos.com/v1alpha1
-          kind: InstallPlan
-          metadata:
-            name: "{{ install_plan.resources[0].metadata.name }}"
-            namespace: "{{ devops_namespace }}"
-          spec:
-            approved: true
-      when: 
-        - install_plan.resources | length > 0
-        - install_plan.resources[0].spec.approved == false
 
     - name: Wait for SonarQube Operator CSV to be ready
       k8s_info:
@@ -145,7 +106,7 @@
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: operators.coreos.com/v1alpha1
         kind: ClusterServiceVersion
-        namespace: "{{ devops_namespace }}"
+        namespace: openshift-operators
         label_selectors:
           - "operators.coreos.com/sonarqube-operator.{{ devops_namespace }}"
       register: csv_status
