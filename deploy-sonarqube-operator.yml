@@ -70,80 +70,115 @@
             client-id: "{{ github_client_id }}"
             client-secret: "{{ github_client_secret }}"
 
-    - name: Create OperatorGroup for EDP Sonar Operator
-      kubernetes:
+    - name: Create RedHatGov Catalog Source
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        definition:
+          apiVersion: operators.coreos.com/v1alpha1
+          kind: CatalogSource
+          metadata:
+            name: redhatgov-operators
+            namespace: openshift-marketplace
+          spec:
+            sourceType: grpc
+            image: quay.io/redhatgov/operator-catalog:latest
+            displayName: Red Hat NAPS Community Operators
+            publisher: RedHatGov
+
+    - name: Create Operator Group
+      k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
           apiVersion: operators.coreos.com/v1
           kind: OperatorGroup
           metadata:
-            name: edp-sonar-operatorgroup
+            name: sonarqube-operator-group
             namespace: "{{ devops_namespace }}"
           spec:
             targetNamespaces:
               - "{{ devops_namespace }}"
 
-    - name: Create EDP Sonar Operator Subscription
-      kubernetes:
+    - name: Subscribe to SonarQube Operator
+      k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
           apiVersion: operators.coreos.com/v1alpha1
           kind: Subscription
           metadata:
-            name: edp-sonar-operator
+            name: sonarqube-operator
             namespace: "{{ devops_namespace }}"
           spec:
-            channel: "alpha"
-            name: edp-sonar-operator
-            source: community-operators
+            channel: alpha
+            name: sonarqube-operator
+            source: redhatgov-operators
             sourceNamespace: openshift-marketplace
-            installPlanApproval: Automatic
 
-    - name: Wait for EDP Sonar Operator to be ready
-      kubernetes:
+    - name: Wait for SonarQube Operator to be ready
+      k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         api_version: operators.coreos.com/v1alpha1
         kind: ClusterServiceVersion
-        name: "edp-sonar-operator.v{{ edp_sonar_operator_version }}"
+        name: "sonarqube-operator.v0.0.1"
         namespace: "{{ devops_namespace }}"
       register: csv_status
       until: csv_status.result.status.phase == 'Succeeded'
       retries: 15
       delay: 60
 
-    - name: Display CSV status
-      debug:
-        var: csv_status
-
-    - name: Deploy Sonar instance
-      kubernetes:
+    - name: Deploy SonarQube instance
+      k8s:
         host: "{{ cluster_api_url }}"
         api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
         definition:
-          apiVersion: v2.edp.epam.com/v1
-          kind: Sonar
+          apiVersion: redhatgov.io/v1alpha1
+          kind: Sonarqube
           metadata:
-            name: sonar
+            name: sonarqube
             namespace: "{{ devops_namespace }}"
           spec:
-            type: Sonar
-            version: "9.9.0"
-            basePath: "/"
-            imagePullSecrets: []
+            sonarqube:
+              image:
+                src: quay.io/redhatgov/sonarqube
+                tag: "8.3.1.34397"
+              plugins:
+                - name: sonar-auth-github-plugin
+                  version: "1.6.0"
+              env:
+                - name: SONAR_AUTH_GITHUB_ENABLED
+                  value: "true"
+                - name: SONAR_AUTH_GITHUB_CLIENTID
+                  value: "{{ github_client_id }}"
+                - name: SONAR_AUTH_GITHUB_CLIENTSECRET
+                  value: "{{ github_client_secret }}"
+                - name: SONAR_AUTH_GITHUB_ORGANIZATIONS
+                  value: "{{ github_organizations | join(',') }}"
+            postgresql:
+              image:
+                src: registry.redhat.io/rhel8/postgresql-10
+                tag: latest
             ingress:
               enabled: true
-              host: "sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
-            storage:
-              class: "gp2"
-              size: 1Gi
-            database:
-              externalDb:
-                enabled: false
-            githubAuth:
+            route:
               enabled: true
-              clientId: "{{ github_client_id }}"
-              clientSecret: "{{ github_client_secret }}"
-              organizations: "{{ github_organizations | default([]) }}"
+              host: "sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
+
+    - name: Wait for SonarQube instance to be ready
+      k8s:
+        host: "{{ cluster_api_url }}"
+        api_key: "{{ k8s_auth_results.k8s_auth.api_key }}"
+        api_version: redhatgov.io/v1alpha1
+        kind: Sonarqube
+        name: sonarqube
+        namespace: "{{ devops_namespace }}"
+      register: sonarqube_status
+      until: sonarqube_status.result.status.ready is defined and sonarqube_status.result.status.ready
+      retries: 30
+      delay: 60
+
+    - name: Display SonarQube URL
+      debug:
+        msg: "SonarQube URL: https://sonarqube-{{ devops_namespace }}.{{ cluster_domain }}"
