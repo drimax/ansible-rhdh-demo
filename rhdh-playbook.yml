@@ -87,7 +87,7 @@
             name: rhdh
             source: redhat-operators
             sourceNamespace: openshift-marketplace
-            startingCSV: rhdh-operator.v1.1.1
+            startingCSV: rhdh-operator.v1.3.0
       when: namespace_created is succeeded
       
     - name: Wait for Red Hat Developer Hub Operator to be installed
